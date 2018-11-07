@@ -1,0 +1,2 @@
+Install nginx into a custom directory. Check that *all* files have been copied.
+Run a more thorough test.
