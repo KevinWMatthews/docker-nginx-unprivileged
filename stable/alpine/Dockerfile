@@ -2,6 +2,11 @@ FROM alpine:3.8 as build
 
 LABEL maintainer="NGINX Docker Maintainers <docker-maint@nginx.com>"
 
+ARG userid=1001
+ARG username=nginx
+# Group must be specified as root for OpenShift and Kubernetes
+ARG group=root
+
 ENV NGINX_VERSION 1.14.0
 
 RUN apk add --no-cache --virtual .build-deps \
@@ -52,8 +57,8 @@ RUN apk add --no-cache --virtual .build-deps \
 		--http-fastcgi-temp-path=/var/cache/nginx/fastcgi_temp \
 		--http-uwsgi-temp-path=/var/cache/nginx/uwsgi_temp \
 		--http-scgi-temp-path=/var/cache/nginx/scgi_temp \
-		--user=nginx \
-		--group=nginx \
+		--user=${username} \
+		--group=${group} \
 		--with-http_ssl_module \
 		--with-http_realip_module \
 		--with-http_addition_module \
@@ -129,11 +134,20 @@ RUN apk add --no-cache --virtual .build-deps \
 
 FROM alpine:3.8
 
+LABEL maintainer="NGINX Docker Maintainers <docker-maint@nginx.com>"
+
+ARG userid=1001
+ARG username=nginx
+# Group must be specified as root for OpenShift and Kubernetes
+ARG group=root
+#TODO do we need NGINX_VERSION?
+
 # Bring in tzdata so users could set the timezones through the environment variables
 RUN apk add --no-cache \
     openssl \
     pcre \
     tzdata
+#TODO do we need any other packages?
 
 COPY --from=build /usr/sbin/nginx /usr/sbin/nginx
 COPY --from=build /usr/sbin/nginx-debug /usr/sbin/nginx-debug
@@ -141,25 +155,25 @@ COPY --from=build /etc/nginx /etc/nginx
 COPY --from=build /usr/lib/nginx/modules /usr/lib/nginx/modules
 COPY --from=build /var/log/nginx /var/log/nginx
 COPY --from=build /usr/share/nginx/html /usr/share/nginx/html
+#TODO did we copy everything?
 
+# symlink nginx modules,
 # forward request and error logs to docker log collector
-RUN ln -sf /dev/stdout /var/log/nginx/access.log \
+RUN ln -s /usr/lib/nginx/modules /etc/nginx/modules \
+    && ln -sf /dev/stdout /var/log/nginx/access.log \
     && ln -sf /dev/stderr /var/log/nginx/error.log
-
-RUN ln -s /usr/lib/nginx/modules /etc/nginx/modules
 
 COPY nginx.conf /etc/nginx/nginx.conf
 COPY nginx.vh.default.conf /etc/nginx/conf.d/default.conf
 
-RUN addgroup -S nginx \
-	&& adduser -D -S -h /var/cache/nginx -s /sbin/nologin -G nginx nginx \
-	&& chown -R nginx:root /var/cache/nginx \
-	&& chmod -R g+w /var/cache/nginx
+RUN adduser -D -S -h /var/cache/nginx -s /sbin/nologin -u ${userid} ${username} \
+    && chown -R ${userid}:${group} /var/cache/nginx/ /var/log/nginx/ usr/share/nginx/html/
 
 EXPOSE 8080
 
 STOPSIGNAL SIGTERM
 
-USER nginx
+# Run with userid instead of username for OpenShift/Kubernetes
+USER ${userid}
 
 CMD ["nginx", "-g", "daemon off;"]
