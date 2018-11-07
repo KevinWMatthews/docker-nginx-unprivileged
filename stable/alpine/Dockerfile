@@ -112,25 +112,11 @@ RUN apk add --no-cache --virtual .build-deps \
 	&& strip /usr/sbin/nginx* \
 	&& strip /usr/lib/nginx/modules/*.so \
 	&& rm -rf /usr/src/nginx-$NGINX_VERSION \
-	\
-	# Bring in gettext so we can get `envsubst`, then throw
-	# the rest away. To do this, we need to install `gettext`
-	# then move `envsubst` out of the way so `gettext` can
-	# be deleted completely, then move `envsubst` back.
+	# Install gettext just for  `envsubst`
 	&& apk add --no-cache --virtual .gettext gettext \
-	&& mv /usr/bin/envsubst /tmp/ \
-	\
-	&& runDeps="$( \
-		scanelf --needed --nobanner --format '%n#p' /usr/sbin/nginx /usr/lib/nginx/modules/*.so /tmp/envsubst \
-			| tr ',' '\n' \
-			| sort -u \
-			| awk 'system("[ -e /usr/local/lib/" $1 " ]") == 0 { next } { print "so:" $1 }' \
-	)" \
-	&& apk add --no-cache --virtual .nginx-rundeps $runDeps \
+    && mv /usr/bin/envsubst /usr/local/bin \
 	&& apk del .build-deps \
-	&& apk del .gettext \
-	&& mv /tmp/envsubst /usr/local/bin/
-
+	&& apk del .gettext
 
 FROM alpine:3.8
 
@@ -140,22 +126,25 @@ ARG userid=1001
 ARG username=nginx
 # Group must be specified as root for OpenShift and Kubernetes
 ARG group=root
-#TODO do we need NGINX_VERSION?
 
-# Bring in tzdata so users could set the timezones through the environment variables
-RUN apk add --no-cache \
-    openssl \
-    pcre \
-    tzdata
-#TODO do we need any other packages?
-
+COPY --from=build /usr/local/bin/envsubst /usr/local/bin/envsubst
 COPY --from=build /usr/sbin/nginx /usr/sbin/nginx
 COPY --from=build /usr/sbin/nginx-debug /usr/sbin/nginx-debug
 COPY --from=build /etc/nginx /etc/nginx
 COPY --from=build /usr/lib/nginx/modules /usr/lib/nginx/modules
 COPY --from=build /var/log/nginx /var/log/nginx
 COPY --from=build /usr/share/nginx/html /usr/share/nginx/html
-#TODO did we copy everything?
+
+# Search for and install runtime dependencies:
+# scan all required .so files, put them into a format that apk can understand, then install them.
+# Also bring in tzdata so users could set the timezones through the environment variables
+RUN runDeps="$( \
+		scanelf --needed --nobanner --format '%n#p' /usr/sbin/nginx /usr/lib/nginx/modules/*.so /tmp/envsubst \
+			| tr ',' '\n' \
+			| sort -u \
+			| awk 'system("[ -e /usr/local/lib/" $1 " ]") == 0 { next } { print "so:" $1 }' \
+	)" \
+    && apk add --no-cache --virtual .nginx-rundeps $runDeps tzdata
 
 # symlink nginx modules,
 # forward request and error logs to docker log collector
