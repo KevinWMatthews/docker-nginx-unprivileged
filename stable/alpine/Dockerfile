@@ -2,11 +2,6 @@ FROM alpine:3.8 as build
 
 LABEL maintainer="NGINX Docker Maintainers <docker-maint@nginx.com>"
 
-ARG userid=1001
-ARG username=nginx
-# Group must be specified as root for OpenShift and Kubernetes
-ARG group=root
-
 ENV NGINX_VERSION 1.14.0
 
 RUN apk add --no-cache --virtual .build-deps \
@@ -57,8 +52,8 @@ RUN apk add --no-cache --virtual .build-deps \
 		--http-fastcgi-temp-path=/var/cache/nginx/fastcgi_temp \
 		--http-uwsgi-temp-path=/var/cache/nginx/uwsgi_temp \
 		--http-scgi-temp-path=/var/cache/nginx/scgi_temp \
-		--user=${username} \
-		--group=${group} \
+		--user=nginx \
+		--group=nginx \
 		--with-http_ssl_module \
 		--with-http_realip_module \
 		--with-http_addition_module \
